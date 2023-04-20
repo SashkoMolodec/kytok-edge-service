@@ -1,0 +1,92 @@
+server:
+  port: 9000
+  netty:
+    connection-timeout: 2s
+    idle-timeout: 15s
+  shutdown: graceful
+
+spring:
+  application:
+    name: edge-service
+  lifecycle:
+    timeout-per-shutdown-phase: 15s
+  cloud:
+    gateway:
+      routes:
+        - id: catalog-route
+          uri: ${CATALOG_SERVICE_URL:http://localhost:9001}/vinyls
+          predicates:
+            - Path=/vinyls/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: catalogCircuitBreaker
+                fallbackUri: forward:/catalog-fallback
+        - id: order-route
+          uri: ${ORDER_SERVICE_URL:http://localhost:9002}/orders
+          predicates:
+            - Path=/orders/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: orderCircuitBreaker
+      httpclient:
+        connect-timeout: 5000
+        response-timeout: 5s
+        pool:
+          type: elastic
+          max-idle-time: 15s
+          max-life-time: 60s
+      default-filters:
+        - name: SaveSession
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter:
+              # number of tokens added to the bucket each second
+              replenishRate: 10
+              # Define a larger capacity for the bucket (useful when spike occurs, but not sequentially),
+              # so there may be 20 requests per second
+              burstCapacity: 20
+              # A user request costs 1 token
+              requestedTokens: 1
+        - name: Retry
+          args:
+            retries: 3
+            methods: GET
+            # Retries only when 5XX errors
+            series: SERVER_ERROR
+            # Retries only when the given exceptions are thrown
+            exceptions: java.io.IOException, java.util.concurrent.TimeoutException
+            # Retries with a delay computed as "firstBackoff * (factor**n)"
+            backoff:
+              firstBackoff: 50ms
+              maxBackoff: 500ms
+              factor: 2
+              basedOnPreviousValue: false
+  data:
+    redis:
+      connect-timeout: 2s
+      port: 6379
+      timeout: 1s
+      host: localhost
+  session:
+    timeout: 10m
+    redis:
+      namespace: kytok-edge
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        slidingWindowSize: 5
+        permittedNumberOfCallsInHalfOpenState: 2
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10000
+  timelimiter:
+    configs:
+      default:
+        timeoutDuration: 5s
+
+#logging:
+#  level:
+#    io.github.resilience4j: DEBUG
