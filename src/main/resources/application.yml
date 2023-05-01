@@ -13,6 +13,10 @@ spring:
   cloud:
     gateway:
       routes:
+        - id: spa-route
+          uri: ${SPA_URL:http://localhost:9004}
+          predicates:
+            - Path=/,/*.css,/*.js,/favicon.ico
         - id: catalog-route
           uri: ${CATALOG_SERVICE_URL:http://localhost:9001}/vinyls
           predicates:
@@ -38,7 +42,8 @@ spring:
           max-idle-time: 15s
           max-life-time: 60s
       default-filters:
-        - name: SaveSession
+        - SaveSession
+        - TokenRelay
         - name: RequestRateLimiter
           args:
             redis-rate-limiter:
@@ -73,6 +78,19 @@ spring:
     timeout: 10m
     redis:
       namespace: kytok-edge
+  security:
+    oauth2:
+      client:
+        registration:
+          keycloak:
+            client-id: edge-service
+            client-secret: kytok-keycloak-secret
+            # The list of scopes the Client would like to have access to.
+            # The openid scope triggers OIDC authentication on top of OAuth2.
+            scope: openid,roles
+        provider:
+          keycloak:
+            issuer-uri: http://localhost:8080/realms/KytokRealm
 
 resilience4j:
   circuitbreaker:
